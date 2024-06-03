@@ -1,12 +1,13 @@
 #define CAMERA_MODEL_XIAO_ESP32S3
-#include <I2S.h>
 // #include "FS.h"
 // #include "SD.h"
+#include <ESP_I2S.h>
 #include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
+// #include "driver/i2s_pdm.h"
 #include "esp_camera.h"
 #include "camera_pins.h"
 #include "mulaw.h"
@@ -160,29 +161,43 @@ bool take_photo() {
 
 static size_t recording_buffer_size = 400;
 static size_t compressed_buffer_size = 400 + 3; /* header */
-static uint8_t *s_recording_buffer = nullptr;
+static char    *s_recording_buffer = nullptr;
 static uint8_t *s_compressed_frame = nullptr;
 static uint8_t *s_compressed_frame_2 = nullptr;
+
+I2SClass I2S;
 
 void configure_microphone() {
 
   // start I2S at 16 kHz with 16-bits per sample
-  I2S.setAllPins(-1, 42, 41, -1, -1);
-  if (!I2S.begin(PDM_MONO_MODE, 8000, 16)) {
+  // STD + TDM mode
+  // setPins(int8_t bclk, int8_t ws, int8_t dout, int8_t din = -1, int8_t mclk = -1);
+  I2S.setPins(-1, 42, 41, -1, -1); //SCK, WS, SDOUT, SDIN, MCLK
+
+  // bool begin(i2s_mode_t mode, uint32_t rate, i2s_data_bit_width_t bits_cfg, i2s_slot_mode_t ch, int8_t slot_mask = -1);
+  if(!I2S.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO)) {
     Serial.println("Failed to initialize I2S!");
     while (1); // do nothing
   }
 
   // Allocate buffers
-  s_recording_buffer = (uint8_t *) ps_calloc(recording_buffer_size, sizeof(uint8_t));
+  s_recording_buffer = (char *) ps_calloc(recording_buffer_size, sizeof(char));
   s_compressed_frame = (uint8_t *) ps_calloc(compressed_buffer_size, sizeof(uint8_t));
   s_compressed_frame_2 = (uint8_t *) ps_calloc(compressed_buffer_size, sizeof(uint8_t));
 }
 
+size_t available;
+size_t read;
 size_t read_microphone() {
-  size_t bytes_recorded = 0;
-  esp_i2s::i2s_read(esp_i2s::I2S_NUM_0, s_recording_buffer, recording_buffer_size, &bytes_recorded, portMAX_DELAY);
-  return bytes_recorded;
+  // return I2S.readBytes(s_recording_buffer, recording_buffer_size);
+  I2S.read();
+  available = I2S.available();
+  if(available < recording_buffer_size) {
+    read = I2S.read(s_recording_buffer, available);
+  } else {
+    read = I2S.read(s_recording_buffer, recording_buffer_size);
+  }
+  return read;
 }
 
 //
@@ -241,6 +256,8 @@ void configure_camera() {
 // static uint8_t *s_compressed_frame_2 = nullptr;
 // static size_t compressed_buffer_size = 400 + 3;
 void setup() {
+  blinkSetup();
+
   Serial.begin(921600);
   // SD.begin(21);
   Serial.println("Setup");
@@ -254,6 +271,11 @@ void setup() {
   Serial.println("OK");
 }
 
+void blinkSetup() {
+  // initialize digital pin LED_BUILTIN as an output.
+  pinMode(LED_BUILTIN, OUTPUT);
+}
+
 uint16_t frame_count = 0;
 unsigned long lastCaptureTime = 0;
 size_t sent_photo_bytes = 0;
@@ -264,8 +286,10 @@ void loop() {
 
   // Read from mic
   size_t bytes_recorded = read_microphone();
+  Serial.printf("bytes_recorded = %d, connected = %d", bytes_recorded, connected);
+  Serial.println();
 
-  // Push to BLE
+  // // Push to BLE
   if (bytes_recorded > 0 && connected) {
     size_t out_buffer_size = bytes_recorded / 2 + 3;
     for (size_t i = 0; i < bytes_recorded; i += 2) {
@@ -280,6 +304,7 @@ void loop() {
     frame_count++;
   }
 
+
   // Take a photo
   unsigned long now = millis();
   if ((now - lastCaptureTime) >= 5000 && !need_send_photo && connected) {
@@ -289,6 +314,8 @@ void loop() {
       sent_photo_frames = 0;
       lastCaptureTime = now;
     }
+  }else {
+    digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
   }
 
   // Push to BLE
@@ -323,5 +350,5 @@ void loop() {
   }
 
   // Delay
-  delay(4);
+  delay(10);
 }

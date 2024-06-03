@@ -1,6 +1,7 @@
 import { KnownModel, ollamaInference } from "../modules/ollama";
 import { groqRequest } from "../modules/groq-llama3";
-import { gptRequest } from "../modules/openai";
+// import { gptRequest } from "../modules/openai";
+import { gptRequest } from "../modules/baidu-wenxinyiyan";
 
 
 export async function imageDescription(src: Uint8Array, model?: KnownModel): Promise<string> {

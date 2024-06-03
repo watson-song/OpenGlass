@@ -13,7 +13,8 @@ export function useDevice(): [BluetoothRemoteGATTServer | null, () => Promise<vo
             // Connect to device
             let connected = await navigator.bluetooth.requestDevice({
                 filters: [{ name: 'OpenGlass' }],
-                optionalServices: ['19B10000-E8F2-537E-4F6C-D104768A1214'.toLowerCase()],
+                optionalServices: ['19B10000-E8F2-537E-4F6C-D104768A1214'.toLowerCase(),'19B10001-E8F2-537E-4F6C-D104768A1214'.toLowerCase(),'19B10002-E8F2-537E-4F6C-D104768A1214'.toLowerCase()],
+                // optionalServices: [0x00FF],
             });
 
             // Connect to gatt

@@ -4,7 +4,8 @@ import { rotateImage } from '../modules/imaging';
 import { toBase64Image } from '../utils/base64';
 import { Agent } from '../agent/Agent';
 import { InvalidateSync } from '../utils/invalidateSync';
-import { textToSpeech } from '../modules/openai';
+// import { textToSpeech } from '../modules/openai';
+import { textToSpeech } from '../modules/baidu-wenxinyiyan';
 
 function usePhotos(device: BluetoothRemoteGATTServer) {
 
@@ -51,12 +52,18 @@ function usePhotos(device: BluetoothRemoteGATTServer) {
                 buffer = new Uint8Array([...buffer, ...data]);
             }
 
+            console.log('usePhoto', device.getPrimaryServices())
+
             // Subscribe for photo updates
             const service = await device.getPrimaryService('19B10000-E8F2-537E-4F6C-D104768A1214'.toLowerCase());
+            // const service = await device.getPrimaryService(0x00FF);
+            
             const photoCharacteristic = await service.getCharacteristic('19b10005-e8f2-537e-4f6c-d104768a1214');
+            // const photoCharacteristic = await service.getCharacteristic(0xFF01);
             await photoCharacteristic.startNotifications();
             setSubscribed(true);
             photoCharacteristic.addEventListener('characteristicvaluechanged', (e) => {
+                console.log('characteristicvaluechanged')
                 let value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
                 let array = new Uint8Array(value.buffer);
                 if (array[0] == 0xff && array[1] == 0xff) {
@@ -73,8 +80,50 @@ function usePhotos(device: BluetoothRemoteGATTServer) {
     return [subscribed, photos] as const;
 }
 
+function useAudios(device: BluetoothRemoteGATTServer) {
+
+    // Subscribe to device
+    const [audios, setAudios] = React.useState<Uint8Array[]>([]);
+    const [subscribed, setSubscribed] = React.useState<boolean>(false);
+    React.useEffect(() => {
+        (async () => {
+
+            let buffer: Uint8Array = new Uint8Array(0);
+            function onChunk(data: Uint8Array) {
+                console.log('audio received', data);
+                // Append data
+                buffer = new Uint8Array([...buffer, ...data]);
+            }
+
+            console.log('useAudio', device.getPrimaryServices())
+
+            // Subscribe for photo updates
+            const service = await device.getPrimaryService('19B10000-E8F2-537E-4F6C-D104768A1214'.toLowerCase());
+            
+            const audioCharacteristic = await service.getCharacteristic('19b10001-e8f2-537e-4f6c-d104768a1214');
+            await audioCharacteristic.startNotifications();
+            setSubscribed(true);
+            audioCharacteristic.addEventListener('characteristicvaluechanged', (e) => {
+                console.log('audioCharacteristic characteristicvaluechanged')
+                let value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
+                let array = new Uint8Array(value.buffer);
+                if (array[0] == 0xff && array[1] == 0xff) {
+                    onChunk(new Uint8Array());
+                } else {
+                    let packet = array.slice(2);
+                    onChunk(packet);
+                }
+            });
+        })();
+    }, []);
+
+    return [subscribed, audios] as const;
+}
+
 export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer }) => {
     const [subscribed, photos] = usePhotos(props.device);
+    const [audioSubscribed, audios] = useAudios(props.device);
+    
     const agent = React.useMemo(() => new Agent(), []);
     const agentState = agent.use();
 
@@ -95,6 +144,23 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
         sync.invalidate();
     }, [photos]);
 
+    // Background processing agent
+    const processedAudios = React.useRef<Uint8Array[]>([]);
+    const audioSync = React.useMemo(() => {
+        let processed = 0;
+        return new InvalidateSync(async () => {
+            if (processedAudios.current.length > processed) {
+                let unprocessed = processedAudios.current.slice(processed);
+                processed = processedAudios.current.length;
+                await agent.addAudio(unprocessed);
+            }
+        });
+    }, []);
+    React.useEffect(() => {
+        processedAudios.current = audios;
+        audioSync.invalidate();
+    }, [audios]);
+
     React.useEffect(() => {
         if (agentState.answer) {
             textToSpeech(agentState.answer)
@@ -104,6 +170,15 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
     return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {audios.map((audio, index) => (
+                        <Text key={index} style={{ width: 100, height: 50 }}>
+                            {"audio#"+index}
+                        </Text>
+                    ))}
+                </View>
+            </View>
+            <View style={{ position: 'absolute', top: 100, left: 0, right: 0, bottom: 0 }}>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                     {photos.map((photo, index) => (
                         <Image key={index} style={{ width: 100, height: 100 }} source={{ uri: toBase64Image(photo) }} />
