@@ -186,18 +186,8 @@ void configure_microphone() {
   s_compressed_frame_2 = (uint8_t *) ps_calloc(compressed_buffer_size, sizeof(uint8_t));
 }
 
-size_t available;
-size_t read;
 size_t read_microphone() {
-  // return I2S.readBytes(s_recording_buffer, recording_buffer_size);
-  I2S.read();
-  available = I2S.available();
-  if(available < recording_buffer_size) {
-    read = I2S.read(s_recording_buffer, available);
-  } else {
-    read = I2S.read(s_recording_buffer, recording_buffer_size);
-  }
-  return read;
+  return I2S.readBytes(s_recording_buffer, recording_buffer_size);
 }
 
 //
